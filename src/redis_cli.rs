@@ -1,8 +1,8 @@
 use redis::RedisError;
-use redis::aio::Connection;
+use redis::aio::ConnectionManager;
 use std::env;
 
-pub async fn create_client() -> Result<Connection, RedisError> {
+pub async fn create_client() -> Result<ConnectionManager, RedisError> {
     let url = if env::args().nth(1) == Some("--tls".into()) {
         "rediss://127.0.0.1:6380/#insecure"
     } else {
@@ -10,8 +10,7 @@ pub async fn create_client() -> Result<Connection, RedisError> {
     };
 
     let client = redis::Client::open(url)?;
-    let conn = client.get_async_connection().await?;
-    
+    let conn = client.get_tokio_connection_manager().await?;
     Ok(conn)
 }
 
