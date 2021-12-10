@@ -1,5 +1,5 @@
-use redis::RedisError;
 use redis::aio::ConnectionManager;
+use redis::RedisError;
 use std::env;
 
 pub async fn create_client() -> Result<ConnectionManager, RedisError> {
@@ -13,4 +13,3 @@ pub async fn create_client() -> Result<ConnectionManager, RedisError> {
     let conn = client.get_tokio_connection_manager().await?;
     Ok(conn)
 }
-
