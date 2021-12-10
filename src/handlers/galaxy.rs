@@ -1,12 +1,18 @@
 use futures::stream::StreamExt;
-use mongodb::{bson::doc, bson::Document, Collection, Database};
+use mongodb::{bson::doc, Database};
 use warp::http::StatusCode;
-use std::collections::HashMap;
+// use std::collections::HashMap;
 use redis::AsyncCommands;
+// use warp::reply::Reply;
 
 use crate::models::galaxy::Galaxy;
 use crate::redis_cli;
+// use crate::routes::galaxy::galaxies;
+use crate::db;
+
 use std::convert::Infallible;
+
+const COLLECTION: &str = "galaxies";
 
 pub async fn create_galaxy(galaxy: Galaxy, db: Database) -> Result<impl warp::Reply, Infallible> {
     debug!("create galaxy");
@@ -14,11 +20,9 @@ pub async fn create_galaxy(galaxy: Galaxy, db: Database) -> Result<impl warp::Re
     info!("{:?}", galaxy);
 
     // Get a handle to a collection in the database.
-    let collection = db.collection::<Galaxy>("galaxies");
+    let collection = db::get_galaxy_collection(COLLECTION, db).await;
 
-    let docs = vec![galaxy];
-
-    let res = collection.insert_many(docs, None).await;
+    let res = collection.insert_one(galaxy, None).await;
 
     match res {
         Ok(res) => {
@@ -26,7 +30,7 @@ pub async fn create_galaxy(galaxy: Galaxy, db: Database) -> Result<impl warp::Re
             Ok(StatusCode::CREATED)
         }
         Err(err) => {
-            debug!("error insterting doc {:?}", err);
+            debug!("error inserting doc {:?}", err);
             return Ok(StatusCode::BAD_REQUEST);
         }
     }
@@ -36,7 +40,7 @@ pub async fn get_galaxies(db: Database) -> Result<impl warp::Reply, Infallible> 
     debug!("get galaxies");
 
     // Get a handle to a collection in the database.
-    let collection = db.collection::<Galaxy>("galaxies");
+    let collection = db::get_galaxy_collection(COLLECTION, db).await;
     // let find_options = mongodb::options::FindOptions::builder().build();
     let mut cursor = collection.find(None, None).await.unwrap();
 
@@ -51,14 +55,13 @@ pub async fn get_galaxies(db: Database) -> Result<impl warp::Reply, Infallible> 
     Ok(warp::reply::json(&result))
 }
 
+pub async fn get_galaxy_by_oid(oid: String, db: Database) -> Result<impl warp::Reply, Infallible> {
+    debug!("get galaxy by oid");
 
+    let parsed_oid = mongodb::bson::oid::ObjectId::parse_str(&oid).unwrap();
+    let filter = doc! { "_id": parsed_oid  };
 
-pub async fn get_galaxy_by_name(kv: HashMap<String, String>, db: Database) -> Result<impl warp::Reply, Infallible> {
-    debug!("get galaxy by name");
-
-    let filter = doc! { "name": kv.get("name") };
-    
-    let collection = db.collection::<Galaxy>("galaxies");
+    let collection = db::get_galaxy_collection(COLLECTION, db).await;
     // // let find_options = mongodb::options::FindOptions::builder().build();
     // let mut cursor = collection.find(filter, None).await.unwrap();
 
@@ -72,55 +75,43 @@ pub async fn get_galaxy_by_name(kv: HashMap<String, String>, db: Database) -> Re
     match rc {
         Ok(conn) => {
             let mut conn_cli = conn;
-            let redis_key: &String = kv.get("name").unwrap();
+            let redis_key: &String = &oid;
 
             let cached_galaxy: redis::RedisResult<redis::Value> = conn_cli.get(redis_key).await;
 
             match cached_galaxy {
                 Ok(redis::Value::Nil) => {
-                        // let find_options = mongodb::options::FindOptions::builder().build();
-                    let mut cursor = collection.find(filter, None).await.unwrap();
+                    // let find_options = mongodb::options::FindOptions::builder().build();
+                    let result = collection.find_one(filter, None).await.unwrap();
 
-                    let mut result: Vec<Galaxy> = Vec::new();
-
-                    while let Some(Ok(doc)) = cursor.next().await {
-                        result.push(doc)
-                    }
-
-                    debug!("result: {:?}", result);
-
-                    for res in result.clone() {
-
-                        let _:  Result<(), redis::RedisError>= redis::pipe()
+                    if let Some(glxy) = &result {
+                        let _: Result<(), redis::RedisError> = redis::pipe()
                             .atomic()
-                            .set(&redis_key, &res)
-                            .expire(&redis_key, 60)
+                            .set(&oid, &glxy)
+                            .expire(&oid, 60)
                             .query_async(&mut conn_cli)
                             .await;
                     }
 
-                    return Ok(warp::reply::json(&result))
-
+                    debug!("{:?}", &result);
+                    return Ok(warp::reply::json(&result));
                 }
 
-                Ok(redis::Value::Data(val)) =>{
-                    return Ok(warp::reply::json(&val))
+                Ok(redis::Value::Data(val)) => {
+                    let actual: Galaxy = serde_json::from_slice(&val).unwrap();
+                    return Ok(warp::reply::json(&actual));
                 }
 
                 _ => {
                     debug!("unexpected value");
-                    
                 }
             }
         }
 
         Err(err) => {
-            println!("redis error , {:?}", err)
+            debug!("redis error , {:?}", err);
         }
     }
 
-
-
     Ok(warp::reply::json(&""))
 }
-
