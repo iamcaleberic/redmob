@@ -22,7 +22,7 @@ pub async fn create_galaxy(galaxy: Galaxy, db: Database) -> Result<impl warp::Re
     // Get a handle to a collection in the database.
     let collection = db::get_galaxy_collection(COLLECTION, db).await;
 
-    let res = collection.insert_one(galaxy, None).await;
+    let res = collection.insert_one(galaxy).await;
 
     match res {
         Ok(res) => {
@@ -42,7 +42,7 @@ pub async fn get_galaxies(db: Database) -> Result<impl warp::Reply, Infallible> 
     // Get a handle to a collection in the database.
     let collection = db::get_galaxy_collection(COLLECTION, db).await;
     // let find_options = mongodb::options::FindOptions::builder().build();
-    let mut cursor = collection.find(None, None).await.unwrap();
+    let mut cursor = collection.find(doc! {}).await.unwrap();
 
     let mut result: Vec<Galaxy> = Vec::new();
 
@@ -82,7 +82,7 @@ pub async fn get_galaxy_by_oid(oid: String, db: Database) -> Result<impl warp::R
             match cached_galaxy {
                 Ok(redis::Value::Nil) => {
                     // let find_options = mongodb::options::FindOptions::builder().build();
-                    let result = collection.find_one(filter, None).await.unwrap();
+                    let result = collection.find_one(filter).await.unwrap();
 
                     if let Some(glxy) = &result {
                         let _: Result<(), redis::RedisError> = redis::pipe()

@@ -15,7 +15,7 @@ pub async fn create_db() -> Result<Client, mongodb::error::Error> {
     // Ping the server to see if you can connect to the cluster
     client
         .database("redmob")
-        .run_command(doc! {"ping": 1}, None)
+        .run_command(doc! {"ping": 1})
         .await?;
     info!("Connected successfully.");
 
